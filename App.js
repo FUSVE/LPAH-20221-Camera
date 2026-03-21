@@ -47,6 +47,7 @@ export default function App() {
 
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
+        base64: true,
       });
 
       if (!photo?.uri) {
@@ -56,6 +57,8 @@ export default function App() {
 
       setPhotoUri(photo.uri);
       setModalVisible(true);
+      console.log('Foto tirada com sucesso:', photo.uri);
+      console.log('Dados da foto (base64):', photo.base64?.substring(0, 100) + '...'); // Log apenas os primeiros caracteres do base64 para evitar poluição do console
     } catch (error) {
       console.error('Erro ao tirar foto:', error);
       Alert.alert('Erro', 'Não foi possível tirar a foto.');
