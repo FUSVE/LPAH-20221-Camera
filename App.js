@@ -1,61 +1,152 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRef, useState, useEffect } from 'react';
-import { Button, StyleSheet, Text, TouchableOpacity, View, Alert, Image } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
+import { useRef, useState } from 'react';
+import {
+  Alert,
+  Image,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 
 export default function App() {
   const [facing, setFacing] = useState('back');
-  const [permission, requestPermission] = useCameraPermissions();
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [photoUri, setPhotoUri] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
   const cameraRef = useRef(null);
 
-  useEffect(() => {
-    (async () => {
-      const cameraStatus = await Camera.requestCameraPermissionsAsync();
-      const mediaLibraryStatus = await MediaLibrary.requestPermissionsAsync();
-      requestPermission(cameraStatus.status === 'granted');
-      requestMediaPermission(mediaLibraryStatus.status === 'granted');
-    })();
-  }, []);
+  async function pedirPermissaoCamera() {
+    try {
+      const cam = await requestCameraPermission();
 
-  if (!permission || !mediaPermission) {
-    return <View />;
+      if (!cam.granted) {
+        Alert.alert(
+          'Permissão necessária',
+          'Você precisa liberar a câmera para continuar.'
+        );
+      }
+    } catch (error) {
+      console.error('Erro ao pedir permissão da câmera:', error);
+      Alert.alert('Erro', 'Não foi possível solicitar a permissão da câmera.');
+    }
   }
 
-  if (!permission.granted || !mediaPermission.granted) {
+  function toggleCameraFacing() {
+    setFacing((current) => (current === 'back' ? 'front' : 'back'));
+  }
+
+  async function takePicture() {
+    try {
+      if (!cameraRef.current) {
+        Alert.alert('Erro', 'Câmera não disponível.');
+        return;
+      }
+
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.8,
+      });
+
+      if (!photo?.uri) {
+        Alert.alert('Erro', 'Não foi possível tirar a foto.');
+        return;
+      }
+
+      setPhotoUri(photo.uri);
+      setModalVisible(true);
+    } catch (error) {
+      console.error('Erro ao tirar foto:', error);
+      Alert.alert('Erro', 'Não foi possível tirar a foto.');
+    }
+  }
+
+  function fecharModal() {
+    setModalVisible(false);
+  }
+
+  function tirarOutraFoto() {
+    setPhotoUri(null);
+    setModalVisible(false);
+  }
+
+  const cameraGranted = cameraPermission?.granted === true;
+
+  if (!cameraGranted) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.message}>Libere o uso da câmera e da galeria</Text>
+      <View style={styles.permissionContainer}>
+        <StatusBar style="dark" />
+        <Text style={styles.message}>O app precisa de acesso à câmera.</Text>
+
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={pedirPermissaoCamera}
+        >
+          <Text style={styles.permissionButtonText}>Permitir acesso</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.smallText}>
+          Se você já negou antes, talvez precise liberar manualmente nas
+          configurações do celular.
+        </Text>
       </View>
     );
   }
 
-  function toggleCameraFacing() {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-  }
-
-  async function takePicture() {
-    if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
-      const asset = await MediaLibrary.createAssetAsync(photo.uri);
-      await MediaLibrary.createAlbumAsync('Minhas Fotos', asset, false);
-      Alert.alert('Foto salva na galeria!');
-    }
-  }
-
   return (
     <View style={styles.container}>
+      <StatusBar style="light" />
+
       <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
+        <View style={styles.overlayTop}>
+          <Text style={styles.title}>Camera App</Text>
+        </View>
+
         <View style={styles.buttonContainer}>
           <TouchableOpacity style={styles.buttonFlip} onPress={toggleCameraFacing}>
-            <Image style={styles.icon} source={require("./assets/flip.png")} />
+            <Image style={styles.icon} source={require('./assets/flip.png')} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.buttonTake} onPress={takePicture}>
-            <Image style={styles.icon} source={require("./assets/camera.png")} />
+            <Image style={styles.icon} source={require('./assets/camera.png')} />
           </TouchableOpacity>
         </View>
       </CameraView>
+
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={fecharModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Foto capturada</Text>
+
+            {photoUri && (
+              <Image
+                source={{ uri: photoUri }}
+                style={styles.previewImage}
+                resizeMode="contain"
+              />
+            )}
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.modalButton} onPress={fecharModal}>
+                <Text style={styles.modalButtonText}>Fechar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={tirarOutraFoto}
+              >
+                <Text style={styles.modalButtonText}>Tirar outra</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -63,51 +154,125 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000',
+  },
+  permissionContainer: {
+    flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
   },
   message: {
+    fontSize: 18,
     textAlign: 'center',
-    paddingBottom: 10,
+    marginBottom: 20,
+  },
+  smallText: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 16,
+    color: '#666',
+    lineHeight: 18,
+  },
+  permissionButton: {
+    backgroundColor: '#222',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  permissionButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
   camera: {
     flex: 1,
   },
+  overlayTop: {
+    position: 'absolute',
+    top: 60,
+    width: '100%',
+    alignItems: 'center',
+  },
+  title: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
   buttonContainer: {
     flex: 1,
-    backgroundColor: "transparent",
-    flexDirection: "row",
+    backgroundColor: 'transparent',
+    flexDirection: 'row',
   },
   icon: {
-    width: "80%",
-    height: "80%"
+    width: '70%',
+    height: '70%',
   },
   buttonFlip: {
-    position: "absolute",
+    position: 'absolute',
     bottom: 50,
     left: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    margin: 20,
-    width: 50,
-    height: 50,
-    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
   buttonTake: {
-    position: "absolute",
+    position: 'absolute',
     bottom: 50,
     right: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    margin: 20,
-    width: 50,
-    height: 50,
-    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
   },
-  text: {
-    fontSize: 18,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxHeight: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: 'white',
+    marginBottom: 12,
+  },
+  previewImage: {
+    width: '100%',
+    height: 420,
+    borderRadius: 12,
+    backgroundColor: '#eee',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    marginTop: 16,
+    gap: 12,
+  },
+  modalButton: {
+    backgroundColor: '#222',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
