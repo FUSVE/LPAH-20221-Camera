@@ -33,7 +33,20 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-camera"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permita que o aplicativo utilize a câmera."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Permita que o aplicativo acesse suas fotos.",
+          "savePhotosPermission": "Permita que o aplicativo salve fotos na galeria.",
+          "granularPermissions": ["photo"]
+        }
+      ]
     ]
   }
 }

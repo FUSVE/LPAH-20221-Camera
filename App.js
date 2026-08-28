@@ -1,5 +1,5 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
+
 import {
   Alert,
   Image,
@@ -9,148 +9,267 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 
-export default function App() {
-  const [facing, setFacing] = useState('back');
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const [photoUri, setPhotoUri] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
+import {
+  CameraView,
+  useCameraPermissions,
+} from 'expo-camera';
+
+import * as MediaLibrary from 'expo-media-library';
+
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from 'react-native-safe-area-context';
+
+function CameraScreen() {
   const cameraRef = useRef(null);
 
-  async function pedirPermissaoCamera() {
-    try {
-      const cam = await requestCameraPermission();
+  const [facing, setFacing] = useState('back');
+  const [capturedImage, setCapturedImage] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-      if (!cam.granted) {
+  const [cameraPermission, requestCameraPermission] =
+    useCameraPermissions();
+
+  const [mediaPermission, requestMediaPermission] =
+    MediaLibrary.usePermissions({
+      writeOnly: true,
+    });
+
+  async function requestPermissions() {
+    try {
+      const cameraResult = await requestCameraPermission();
+      const mediaResult = await requestMediaPermission();
+
+      if (!cameraResult.granted || !mediaResult.granted) {
         Alert.alert(
-          'Permissão necessária',
-          'Você precisa liberar a câmera para continuar.'
+          'Permissões necessárias',
+          'É necessário permitir o uso da câmera e o salvamento de fotos.'
         );
+
+        return;
       }
+
+      Alert.alert(
+        'Permissões concedidas',
+        'Agora você pode tirar e salvar fotos.'
+      );
     } catch (error) {
-      console.error('Erro ao pedir permissão da câmera:', error);
-      Alert.alert('Erro', 'Não foi possível solicitar a permissão da câmera.');
+      console.error('Erro ao solicitar permissões:', error);
+
+      Alert.alert(
+        'Erro',
+        'Não foi possível solicitar as permissões.'
+      );
     }
   }
 
   function toggleCameraFacing() {
-    setFacing((current) => (current === 'back' ? 'front' : 'back'));
+    setFacing(current =>
+      current === 'back' ? 'front' : 'back'
+    );
   }
 
   async function takePicture() {
+    if (!cameraRef.current || isSaving) {
+      return;
+    }
+
     try {
-      if (!cameraRef.current) {
-        Alert.alert('Erro', 'Câmera não disponível.');
-        return;
-      }
+      setIsSaving(true);
 
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
+        quality: 1,
         base64: true,
+        skipProcessing: false,
       });
 
       if (!photo?.uri) {
-        Alert.alert('Erro', 'Não foi possível tirar a foto.');
-        return;
+        throw new Error('A câmera não retornou uma foto válida.');
       }
 
-      setPhotoUri(photo.uri);
+      const fileName =
+        photo.uri.split('/').pop() || 'foto.jpg';
+
+      console.log('Nome do arquivo:', fileName);
+      console.log('URI temporária:', photo.uri);
+      console.log('Base64:', photo.base64);
+      console.log(
+        'Tamanho do Base64:',
+        photo.base64?.length ?? 0
+      );
+
+      let permission = mediaPermission;
+
+      if (!permission?.granted) {
+        permission = await requestMediaPermission();
+      }
+
+      if (!permission.granted) {
+        throw new Error(
+          'A permissão para salvar a foto não foi concedida.'
+        );
+      }
+
+      await MediaLibrary.saveToLibraryAsync(photo.uri);
+
+      console.log('Status: foto salva com sucesso');
+      console.log('Destino: galeria geral do celular');
+      console.log('Nome do arquivo:', fileName);
+      console.log('URI original:', photo.uri);
+
+      setCapturedImage(photo.uri);
       setModalVisible(true);
-      console.log('Foto tirada com sucesso:', photo.uri);
-      console.log('Dados da foto (base64):', photo.base64?.substring(0, 100) + '...'); // Log apenas os primeiros caracteres do base64 para evitar poluição do console
+
+      Alert.alert(
+        'Foto salva com sucesso',
+        'A foto foi salva na galeria geral do celular.'
+      );
     } catch (error) {
-      console.error('Erro ao tirar foto:', error);
-      Alert.alert('Erro', 'Não foi possível tirar a foto.');
+      console.error(
+        'Erro ao capturar ou salvar a foto:',
+        error
+      );
+
+      Alert.alert(
+        'Erro',
+        error?.message ||
+          'Não foi possível capturar ou salvar a foto.'
+      );
+    } finally {
+      setIsSaving(false);
     }
   }
 
-  function fecharModal() {
-    setModalVisible(false);
-  }
-
-  function tirarOutraFoto() {
-    setPhotoUri(null);
-    setModalVisible(false);
-  }
-
-  const cameraGranted = cameraPermission?.granted === true;
-
-  if (!cameraGranted) {
+  if (!cameraPermission || !mediaPermission) {
     return (
-      <View style={styles.permissionContainer}>
-        <StatusBar style="dark" />
-        <Text style={styles.message}>O app precisa de acesso à câmera.</Text>
-
-        <TouchableOpacity
-          style={styles.permissionButton}
-          onPress={pedirPermissaoCamera}
-        >
-          <Text style={styles.permissionButtonText}>Permitir acesso</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.smallText}>
-          Se você já negou antes, talvez precise liberar manualmente nas
-          configurações do celular.
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>
+          Verificando permissões...
         </Text>
       </View>
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
+  if (
+    !cameraPermission.granted ||
+    !mediaPermission.granted
+  ) {
+    return (
+      <SafeAreaView style={styles.permissionContainer}>
+        <Text style={styles.permissionTitle}>
+          Permissões necessárias
+        </Text>
 
-      <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
-        <View style={styles.overlayTop}>
-          <Text style={styles.title}>Camera App</Text>
-        </View>
+        <Text style={styles.permissionMessage}>
+          Autorize o uso da câmera e o salvamento de fotos na
+          galeria.
+        </Text>
+
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={requestPermissions}
+        >
+          <Text style={styles.permissionButtonText}>
+            Conceder permissões
+          </Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView
+      style={styles.container}
+      edges={['top', 'bottom']}
+    >
+      <View style={styles.cameraContainer}>
+
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing={facing}
+          mode="picture"
+        />
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.buttonFlip} onPress={toggleCameraFacing}>
-            <Image style={styles.icon} source={require('./assets/flip.png')} />
+          <TouchableOpacity
+            style={styles.flipButton}
+            onPress={toggleCameraFacing}
+            disabled={isSaving}
+          >
+            <Image
+              style={styles.icon}
+              source={require('./assets/flip.png')}
+            />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.buttonTake} onPress={takePicture}>
-            <Image style={styles.icon} source={require('./assets/camera.png')} />
+          <TouchableOpacity
+            style={[
+              styles.captureButton,
+              isSaving && styles.disabledButton,
+            ]}
+            onPress={takePicture}
+            disabled={isSaving}
+          >
+            <Image
+              style={styles.captureIcon}
+              source={require('./assets/camera.png')}
+            />
           </TouchableOpacity>
         </View>
-      </CameraView>
+
+        {isSaving && (
+          <View style={styles.savingContainer}>
+            <Text style={styles.savingText}>
+              Salvando foto...
+            </Text>
+          </View>
+        )}
+      </View>
 
       <Modal
+        transparent
+        animationType="fade"
         visible={modalVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={fecharModal}
+        statusBarTranslucent
+        onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Foto capturada</Text>
+        <SafeAreaView style={styles.modalContainer}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setModalVisible(false)}
+          >
+            <Image
+              style={styles.closeIcon}
+              source={require('./assets/close.png')}
+            />
+          </TouchableOpacity>
 
-            {photoUri && (
-              <Image
-                source={{ uri: photoUri }}
-                style={styles.previewImage}
-                resizeMode="contain"
-              />
-            )}
+          {capturedImage && (
+            <Image
+              style={styles.previewImage}
+              source={{ uri: capturedImage }}
+              resizeMode="contain"
+            />
+          )}
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalButton} onPress={fecharModal}>
-                <Text style={styles.modalButtonText}>Fechar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={tirarOutraFoto}
-              >
-                <Text style={styles.modalButtonText}>Tirar outra</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+          <Text style={styles.savedMessage}>
+            Foto salva na galeria
+          </Text>
+        </SafeAreaView>
       </Modal>
-    </View>
+    </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <CameraScreen />
+    </SafeAreaProvider>
   );
 }
 
@@ -159,123 +278,162 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: 30,
     backgroundColor: '#fff',
   },
-  message: {
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  smallText: {
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 16,
-    color: '#666',
-    lineHeight: 18,
-  },
-  permissionButton: {
-    backgroundColor: '#222',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  permissionButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  camera: {
-    flex: 1,
-  },
-  overlayTop: {
-    position: 'absolute',
-    top: 60,
-    width: '100%',
-    alignItems: 'center',
-  },
-  title: {
-    color: '#fff',
+
+  permissionTitle: {
+    marginBottom: 12,
+    color: '#111827',
     fontSize: 22,
     fontWeight: 'bold',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    textAlign: 'center',
+  },
+
+  permissionMessage: {
+    marginBottom: 25,
+    color: '#4b5563',
+    fontSize: 16,
+    lineHeight: 23,
+    textAlign: 'center',
+  },
+
+  permissionButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 14,
     borderRadius: 10,
+    backgroundColor: '#2563eb',
   },
-  buttonContainer: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    flexDirection: 'row',
-  },
-  icon: {
-    width: '70%',
-    height: '70%',
-  },
-  buttonFlip: {
-    position: 'absolute',
-    bottom: 50,
-    left: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-  buttonTake: {
-    position: 'absolute',
-    bottom: 50,
-    right: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    width: '100%',
-    maxHeight: '85%',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-  },
-  modalTitle: {
-    fontSize: 20,
+
+  permissionButtonText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 12,
   },
+
+  cameraContainer: {
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+
+  buttonContainer: {
+    position: 'absolute',
+    right: 0,
+    bottom: 30,
+    left: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 35,
+  },
+
+  flipButton: {
+    width: 56,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+  },
+
+  captureButton: {
+    width: 76,
+    height: 76,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 38,
+    backgroundColor: '#fff',
+  },
+
+  disabledButton: {
+    opacity: 0.5,
+  },
+
+  icon: {
+    width: '65%',
+    height: '65%',
+    resizeMode: 'contain',
+  },
+
+  captureIcon: {
+    width: '65%',
+    height: '65%',
+    resizeMode: 'contain',
+  },
+
+  savingContainer: {
+    position: 'absolute',
+    top: 20,
+    alignSelf: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+  },
+
+  savingText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.96)',
+  },
+
   previewImage: {
     width: '100%',
-    height: 420,
-    borderRadius: 12,
-    backgroundColor: '#eee',
+    height: '80%',
   },
-  modalButtons: {
-    flexDirection: 'row',
-    marginTop: 16,
-    gap: 12,
+
+  closeButton: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 10,
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 25,
+    backgroundColor: '#fff',
   },
-  modalButton: {
-    backgroundColor: '#222',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 8,
+
+  closeIcon: {
+    width: '60%',
+    height: '60%',
+    resizeMode: 'contain',
   },
-  modalButtonText: {
+
+  savedMessage: {
+    position: 'absolute',
+    bottom: 25,
     color: '#fff',
+    fontSize: 16,
     fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
