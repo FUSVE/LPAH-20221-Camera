@@ -81,9 +81,9 @@ function CameraScreen() {
       setIsSaving(true);
 
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 1,
+        quality: 0.8,
         base64: true,
-        skipProcessing: false,
+        skipProcessing: true,
       });
 
       if (!photo?.uri) {
@@ -91,11 +91,11 @@ function CameraScreen() {
       }
 
       const fileName =
-        photo.uri.split('/').pop() || 'foto.jpg';
+        photo.uri.split('/').pop();
 
       console.log('Nome do arquivo:', fileName);
       console.log('URI temporária:', photo.uri);
-      console.log('Base64:', photo.base64);
+      //console.log('Base64:', photo.base64);
       console.log(
         'Tamanho do Base64:',
         photo.base64?.length ?? 0
@@ -158,7 +158,7 @@ function CameraScreen() {
     !mediaPermission.granted
   ) {
     return (
-      <SafeAreaView style={styles.permissionContainer}>
+      <View style={styles.permissionContainer}>
         <Text style={styles.permissionTitle}>
           Permissões necessárias
         </Text>
@@ -176,7 +176,7 @@ function CameraScreen() {
             Conceder permissões
           </Text>
         </TouchableOpacity>
-      </SafeAreaView>
+      </View>
     );
   }
 
